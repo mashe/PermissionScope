@@ -15,6 +15,7 @@ import EventKit
 import CoreBluetooth
 import CoreMotion
 import Contacts
+import CloudKit
 
 public typealias statusRequestClosure = (status: PermissionStatus) -> Void
 public typealias authClosureType      = (finished: Bool, results: [PermissionResult]) -> Void
@@ -982,12 +983,66 @@ typealias resultsForConfigClosure     = ([PermissionResult]) -> Void
     
     /// Returns whether PermissionScope is waiting for the user to enable/disable motion access or not.
     private var waitingForMotion = false
-    
+	
+	// MARK: CloudKit
+	
+	/**
+	Returns the current permission status for accessing CloudKit.
+	
+	- returns: Permission status for the requested type.
+	*/
+	public func statusCloudKit() -> PermissionStatus  {
+		let sema = dispatch_semaphore_create(0)
+		var permissionStatus: PermissionStatus = .Unknown
+		CKContainer.defaultContainer().statusForApplicationPermission(.UserDiscoverability)
+		{ (status, error) -> Void in
+			switch status {
+			case .InitialState:
+				permissionStatus = .Unknown
+			case .Granted:
+				permissionStatus = .Authorized
+			case .Denied:
+				permissionStatus = .Unauthorized
+			case .CouldNotComplete:
+				// Error ocurred.
+				print(error!.localizedDescription)
+				// TODO: What should we return ? Use throws ?
+				permissionStatus = .Unknown
+			}
+			dispatch_semaphore_signal(sema);
+		}
+		dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+		return permissionStatus
+	}
+	
+	/**
+	Requests access to CloudKit, if necessary.
+	*/
+	public func requestCloudKit() {
+		CKContainer.defaultContainer().accountStatusWithCompletionHandler { (status, error) -> Void in
+			// log error?
+			switch status {
+			case .Available:
+				CKContainer.defaultContainer().requestApplicationPermission(.UserDiscoverability,
+					completionHandler: { (status2, error2) -> Void in
+						self.detectAndCallback()
+				})
+			case .Restricted, .NoAccount:
+				self.showDisabledAlert(.CloudKit)
+			case .CouldNotDetermine:
+				// Ask user to login to iCloud
+				print(error!.localizedDescription)
+				// TODO: What should we return ? Use throws ?
+				break
+			}
+		}
+	}
+
     // MARK: - UI
-    
+	
     /**
     Shows the modal viewcontroller for requesting access to the configured permissions and sets up the closures on it.
-    
+	
     - parameter authChange: Called when a status is detected on any of the permissions.
     - parameter cancelled:  Called when the user taps the Close button.
     */
@@ -1238,8 +1293,10 @@ typealias resultsForConfigClosure     = ([PermissionResult]) -> Void
             permissionStatus = statusBluetooth()
         case .Motion:
             permissionStatus = statusMotion()
+		case .CloudKit:
+			permissionStatus = statusCloudKit()
         }
-        
+	
         // Perform completion
         completion(status: permissionStatus)
     }

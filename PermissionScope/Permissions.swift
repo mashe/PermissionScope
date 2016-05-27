@@ -76,3 +76,7 @@ public typealias requestPermissionShowAlert     = (PermissionType) -> Void
 @objc public class MotionPermission: NSObject, Permission {
     public let type: PermissionType = .Motion
 }
+
+@objc public class CloudKitPermission: NSObject, Permission {
+    public let type: PermissionType = .CloudKit
+}
